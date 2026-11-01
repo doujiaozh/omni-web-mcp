@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Omni-Web-MCP · AI 游乐场演示</title>
+<meta name="description" content="Omni-Web-MCP 演示页 —— 一行 script，让网页成为 AI 的游乐场。" />
+<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+<style>
+  :root {
+    --bg: #0b0d17;
+    --bg2: #101322;
+    --panel: rgba(255, 255, 255, 0.045);
+    --panel-border: rgba(255, 255, 255, 0.09);
+    --panel-hover: rgba(255, 255, 255, 0.075);
+    --text: #eef1ff;
+    --muted: #8b90ad;
+    --faint: #5a5f7d;
+    --accent: #7c5cff;
+    --accent2: #2fd4c4;
+    --accent3: #ff6b9d;
+    --ok: #3ddc97;
+    --warn: #ffb84d;
+    --err: #ff5c7a;
+    --radius: 16px;
+    --mono: 'SF Mono', 'JetBrains Mono', Consolas, 'Courier New', monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+      'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+    line-height: 1.55;
+  }
+
+  /* ---------- 背景光晕 ---------- */
+  .aurora { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+  .aurora::before, .aurora::after {
+    content: ''; position: absolute; border-radius: 50%;
+    filter: blur(90px); opacity: 0.55;
+    animation: drift 18s ease-in-out infinite alternate;
+  }
+  .aurora::before {
+    width: 520px; height: 520px; left: -160px; top: -140px;
+    background: radial-gradient(circle, #5b3df0 0%, transparent 70%);
+  }
+  .aurora::after {
+    width: 460px; height: 460px; right: -140px; top: 120px;
+    background: radial-gradient(circle, #0fb9a6 0%, transparent 70%);
+    animation-delay: -6s;
+  }
+  .aurora .blob3 {
+    position: absolute; width: 380px; height: 380px; left: 40%; bottom: -180px;
+    border-radius: 50%; filter: blur(100px); opacity: 0.4;
+    background: radial-gradient(circle, #ff6b9d 0%, transparent 70%);
+    animation: drift 22s ease-in-out infinite alternate-reverse;
+  }
+  @keyframes drift {
+    0%   { transform: translate(0, 0)    scale(1); }
+    50%  { transform: translate(40px, 30px) scale(1.08); }
+    100% { transform: translate(-30px, 60px) scale(0.96); }
+  }
+
+  .grid-overlay {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse at 50% 0%, #000 30%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse at 50% 0%, #000 30%, transparent 75%);
+  }
+
+  .wrap { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding: 0 24px 96px; }
+
+  /* ---------- 顶栏 ---------- */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 22px 0; gap: 16px; flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo {
+    width: 40px; height: 40px; border-radius: 12px; flex: none;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    display: grid; place-items: center;
+    box-shadow: 0 8px 28px rgba(124, 92, 255, 0.45);
+  }
+  .logo svg { width: 24px; height: 24px; }
+  .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
+  .brand-text b { font-size: 17px; letter-spacing: 0.2px; }
+  .brand-text span { font-size: 11.5px; color: var(--muted); letter-spacing: 0.6px; text-transform: uppercase; }
+
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 7px 14px; border-radius: 999px; font-size: 12.5px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    font-family: var(--mono); cursor: default; user-select: none;
+    transition: border-color .25s, background .25s;
+  }
+  .status-pill .dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--faint);
+    transition: background .25s, box-shadow .25s;
+  }
+  .status-pill[data-status='connected'] { border-color: rgba(61, 220, 151, 0.45); }
+  .status-pill[data-status='connected'] .dot { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+  .status-pill[data-status='connecting'] .dot { background: var(--warn); animation: pulse 1s infinite; }
+  .status-pill[data-status='error'] .dot, .status-pill[data-status='unauthorized'] .dot { background: var(--err); box-shadow: 0 0 10px var(--err); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+  /* ---------- Hero ---------- */
+  .hero { padding: 62px 0 40px; text-align: center; }
+  .hero .kicker {
+    display: inline-block; font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase;
+    color: var(--accent2); font-family: var(--mono); margin-bottom: 18px;
+    padding: 6px 14px; border: 1px solid rgba(47, 212, 196, 0.3); border-radius: 999px;
+    background: rgba(47, 212, 196, 0.06);
+  }
+  .hero h1 {
+    font-size: clamp(34px, 6vw, 58px); font-weight: 800; letter-spacing: -1px;
+    line-height: 1.1; margin-bottom: 18px;
+  }
+  .hero h1 .grad {
+    background: linear-gradient(100deg, var(--accent) 0%, var(--accent2) 55%, var(--accent3) 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero p { color: var(--muted); font-size: 16.5px; max-width: 640px; margin: 0 auto 26px; }
+  .hero .manifesto {
+    font-family: var(--mono); font-size: 13.5px; color: var(--text);
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 12px; padding: 14px 22px; display: inline-block; margin-bottom: 28px;
+  }
+  .hero .manifesto em { color: var(--accent2); font-style: normal; }
+
+  /* ---------- 按钮 ---------- */
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; justify-content: center;
+    padding: 11px 20px; border-radius: 11px; border: 1px solid var(--panel-border);
+    background: var(--panel); color: var(--text); font-size: 14px; font-weight: 600;
+    font-family: var(--sans); cursor: pointer; transition: all .2s ease;
+  }
+  .btn:hover { background: var(--panel-hover); border-color: rgba(255,255,255,0.18); transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn.primary {
+    background: linear-gradient(135deg, var(--accent), #6a48f0); border-color: transparent;
+    box-shadow: 0 8px 24px rgba(124, 92, 255, 0.4);
+  }
+  .btn.primary:hover { box-shadow: 0 10px 30px rgba(124, 92, 255, 0.55); }
+  .btn.teal { background: linear-gradient(135deg, #17a99b, var(--accent2)); border-color: transparent; color: #04211d; }
+  .btn.ghost { background: transparent; }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+  /* ---------- 主面板布局 ---------- */
+  .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 8px; }
+  @media (max-width: 900px) { .columns { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: var(--radius); padding: 22px;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  }
+  .card h2 {
+    font-size: 13px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--muted);
+    margin-bottom: 16px; display: flex; align-items: center; gap: 9px;
+  }
+  .card h2::before {
+    content: ''; width: 7px; height: 7px; border-radius: 2px; flex: none;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+  }
+
+  /* ---------- 演示待办（可被 AI 操作的真实 UI） ---------- */
+  .todo-input-row { display: flex; gap: 10px; margin-bottom: 14px; }
+  input[type='text'], select, textarea {
+    flex: 1; padding: 11px 14px; border-radius: 11px; font-size: 14px; font-family: var(--sans);
+    background: rgba(0, 0, 0, 0.28); border: 1px solid var(--panel-border); color: var(--text);
+    outline: none; transition: border-color .2s, box-shadow .2s;
+  }
+  input[type='text']:focus, select:focus, textarea:focus {
+    border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.22);
+  }
+  input::placeholder, textarea::placeholder { color: var(--faint); }
+
+  ul.todo-list { list-style: none; display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto; padding-right: 4px; }
+  ul.todo-list li {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px; border-radius: 11px; font-size: 14.5px;
+    background: rgba(255, 255, 255, 0.035); border: 1px solid rgba(255, 255, 255, 0.06);
+    animation: slideIn .28s ease;
+  }
+  @keyframes slideIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+  ul.todo-list li .num {
+    font-family: var(--mono); font-size: 11px; color: var(--accent2); flex: none;
+    background: rgba(47, 212, 196, 0.1); border: 1px solid rgba(47, 212, 196, 0.25);
+    width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center;
+  }
+  ul.todo-list li.done span.task { text-decoration: line-through; color: var(--faint); }
+  ul.todo-list li span.task { flex: 1; }
+  ul.todo-list li button {
+    background: none; border: none; color: var(--faint); cursor: pointer; font-size: 16px;
+    padding: 2px 6px; border-radius: 6px; transition: color .2s, background .2s;
+  }
+  ul.todo-list li button:hover { color: var(--err); background: rgba(255, 92, 122, 0.12); }
+  .empty-hint { color: var(--faint); font-size: 13.5px; text-align: center; padding: 22px 0; font-family: var(--mono); }
+
+  /* ---------- 计数器与选择器 ---------- */
+  .mini-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
+  .counter-box {
+    flex: 1; min-width: 180px; padding: 16px; border-radius: 13px; text-align: center;
+    background: rgba(0, 0, 0, 0.22); border: 1px solid var(--panel-border);
+  }
+  .counter-box .count { font-size: 34px; font-weight: 800; font-family: var(--mono); color: var(--accent2); }
+  .counter-box .lbl { font-size: 11.5px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-top: 2px; }
+  .select-box { flex: 1; min-width: 180px; padding: 14px 16px; border-radius: 13px; background: rgba(0, 0, 0, 0.22); border: 1px solid var(--panel-border); }
+  .select-box .lbl { font-size: 11.5px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+  .select-box select { width: 100%; }
+
+  /* ---------- 滚动沙盒 ---------- */
+  .scroll-sandbox {
+    margin-top: 18px; border-radius: 13px; border: 1px dashed rgba(255,255,255,0.14);
+    height: 132px; overflow-y: auto; padding: 14px 16px; font-size: 13px; color: var(--muted);
+    background: rgba(0,0,0,0.18); font-family: var(--mono);
+  }
+  .scroll-sandbox p { margin-bottom: 10px; }
+  .scroll-sandbox b { color: var(--accent2); }
+
+  /* ---------- 控制台 ---------- */
+  .console-toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .console-view {
+    background: #06070d; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px;
+    padding: 14px; font-family: var(--mono); font-size: 12.2px; line-height: 1.6;
+    max-height: 360px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+    color: #b9c0e0;
+  }
+  .console-view .k-ok { color: var(--ok); }
+  .console-view .k-err { color: var(--err); }
+  .console-view .k-dim { color: var(--faint); }
+  .console-view .k-hl { color: var(--accent2); }
+  .console-view .k-pink { color: var(--accent3); }
+
+  /* ---------- 快照渲染 ---------- */
+  .snap-outline { margin-bottom: 6px; }
+  .snap-outline .h { font-weight: 700; color: var(--text); cursor: pointer; user-select: none; }
+  .snap-outline ul { list-style: none; margin: 2px 0 6px 18px; }
+  .snap-outline li { font-size: 12.6px; }
+  .snap-outline .tag { color: var(--accent); font-family: var(--mono); font-size: 10.5px; margin-right: 6px; }
+  .elems { display: flex; flex-direction: column; gap: 6px; }
+  .elems .el {
+    display: flex; align-items: center; gap: 10px; font-size: 12.4px;
+    padding: 7px 11px; border-radius: 9px; background: rgba(255,255,255,0.035);
+    border: 1px solid rgba(255,255,255,0.05); font-family: var(--mono);
+  }
+  .elems .el .id { color: var(--accent2); flex: none; font-weight: 700; }
+  .elems .el .role { color: var(--accent3); flex: none; }
+  .elems .el .name { color: #cdd3ee; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .elems .el .box { color: var(--faint); font-size: 10.5px; }
+
+  /* ---------- 页脚 ---------- */
+  footer {
+    margin-top: 56px; padding-top: 26px; border-top: 1px solid var(--panel-border);
+    display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    font-size: 12.5px; color: var(--faint); font-family: var(--mono);
+  }
+  footer a { color: var(--muted); text-decoration: none; }
+  footer a:hover { color: var(--accent2); }
+
+  code.inline {
+    font-family: var(--mono); font-size: 12px; color: var(--accent2);
+    background: rgba(47, 212, 196, 0.08); padding: 2px 7px; border-radius: 6px;
+    border: 1px solid rgba(47, 212, 196, 0.18);
+  }
+
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 5px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+</style>
+</head>
+<body>
+<div class="aurora"><div class="blob3"></div></div>
+<div class="grid-overlay"></div>
+
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z" fill="rgba(255,255,255,0.25)" />
+        </svg>
+      </div>
+      <div class="brand-text">
+        <b>Omni-Web-MCP</b>
+        <span>AI Playground · v1.0</span>
+      </div>
+    </div>
+    <div class="status-pill" id="omniStatusPill" data-status="idle" role="status" aria-live="polite">
+      <span class="dot"></span><span id="omniStatusText">待命 · idle</span>
+    </div>
+  </header>
+
+  <section class="hero">
+    <span class="kicker">Zero-dependency · One script tag · MCP-native</span>
+    <h1>让每一个网页，<br /><span class="grad">生来就是 AI 的游乐场。</span></h1>
+    <p>
+      本页面已通过一行 <code class="inline">&lt;script&gt;</code> 接入本地 Omni-Web-MCP Hub。
+      你右边的每一个按钮、输入框、列表项，都已编号并暴露给 AI Agent ——
+      它可以读、可以点、可以输入、可以滚动，就像人类一样浏览网页。
+    </p>
+    <div class="manifesto">
+      Omni-Web-MCP: <em>Every web page, born as an AI playground.</em>
+    </div>
+  </section>
+
+  <div class="columns">
+    <!-- 左列：真实可操作的 UI -->
+    <div class="card" id="interactiveZone">
+      <h2>真实 UI · AI 可操作区</h2>
+      <div class="todo-input-row">
+        <input type="text" id="taskInput" placeholder="添加一个任务，然后按回车或点击添加…" aria-label="新任务" />
+        <button class="btn primary" id="addBtn">添加</button>
+      </div>
+      <ul class="todo-list" id="todoList" aria-label="任务列表"></ul>
+      <div class="empty-hint" id="emptyHint">列表为空 —— 手工添加，或让 AI 调用 input_text 帮你添加。</div>
+
+      <div class="mini-row">
+        <div class="counter-box">
+          <div class="count" id="clickCount">0</div>
+          <div class="lbl">点击计数 · click_element</div>
+          <button class="btn teal" id="countBtn" style="margin-top:10px">点我 +1</button>
+        </div>
+        <div class="select-box">
+          <div class="lbl">主题选择 · select</div>
+          <select id="themeSelect" aria-label="主题">
+            <option value="aurora">极光 Aurora</option>
+            <option value="sunset">日落 Sunset</option>
+            <option value="forest">森林 Forest</option>
+          </select>
+          <div style="margin-top:10px;font-size:12px;color:var(--faint);font-family:var(--mono)" id="selectEcho">当前：aurora</div>
+        </div>
+      </div>
+
+      <div class="scroll-sandbox" id="scrollZone" tabindex="0" aria-label="滚动沙盒">
+        <p><b>scroll_page 演示容器</b> —— AI 可指定 element_id 滚动这个容器。</p>
+        <p>01 · 让 AI 感受滚轮的第一帧</p><p>02 · 每一行都是编号过的世界</p>
+        <p>03 · DOM 即地图，交互即道路</p><p>04 · 你看见的，AI 也看见</p>
+        <p>05 · 你点击的，AI 也点击</p><p>06 · 你输入的，AI 也输入</p>
+        <p>07 · 页面不再是被动的画布</p><p>08 · 而是 Agent 的游乐场</p>
+        <p>09 · 一行 script，边界消融</p><p>10 · End of scroll.</p>
+      </div>
+    </div>
+
+    <!-- 右列：Omni 控制台 -->
+    <div class="card">
+      <h2>Omni 控制台 · 连接与调用</h2>
+      <div class="console-toolbar">
+        <button class="btn primary" id="connBtn">连接 Hub</button>
+        <button class="btn ghost" id="snapBtn" disabled>刷新 DOM 快照</button>
+        <button class="btn ghost" id="clearBtn">清屏</button>
+      </div>
+      <div class="console-view" id="consoleView"><span class="k-dim">// 控制台待命。点击「连接 Hub」开始握手 WS。
+// 鉴权令牌由 Hub 同源自动下发（/api/config），你也可以用 ?token= 手工指定。</span></div>
+
+      <div style="margin-top:18px">
+        <h2 style="margin-bottom:12px">编号交互元素 · interactive</h2>
+        <div class="elems" id="elemsView"><span class="k-dim" style="font-family:var(--mono);font-size:12.5px">连接后由 get_dom_tree 生成……</span></div>
+      </div>
+
+      <div style="margin-top:18px">
+        <h2 style="margin-bottom:12px">页面大纲 · outline</h2>
+        <div class="snap-outline" id="outlineView"><span class="k-dim" style="font-family:var(--mono);font-size:12.5px">等待快照……</span></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span>omni-web-mcp · <span id="footStat">disconnected</span> · <span id="footClient">no clientId</span></span>
+    <span>
+      <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">MCP</a> ·
+      <a href="https://github.com" target="_blank" rel="noopener">GitHub</a> ·
+      built with zero dependencies
+    </span>
+  </footer>
+</div>
+
+<script>
+  /* ================= 演示页自身逻辑（零依赖） ================= */
+  (function () {
+    var $ = function (id) { return document.getElementById(id); };
+    var consoleView = $('consoleView');
+    var connBtn = $('connBtn'), snapBtn = $('snapBtn'), clearBtn = $('clearBtn');
+    var pill = $('omniStatusPill'), pillText = $('omniStatusText');
+    var footStat = $('footStat'), footClient = $('footClient');
+
+    function log(html) {
+      var line = document.createElement('div');
+      line.innerHTML = html;
+      consoleView.appendChild(line);
+      consoleView.scrollTop = consoleView.scrollHeight;
+    }
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+      });
+    }
+
+    /* ---- 待办列表：真实可被 AI 操作的 UI ---- */
+    var todos = [
+      { text: '阅读 Omni-Web-MCP 的 README', done: true },
+      { text: '启动 Hub 并让本页配对', done: false },
+      { text: '让 AI 调用 get_dom_tree 看看它眼中的页面', done: false }
+    ];
+    var listEl = $('todoList'), emptyHint = $('emptyHint'), taskInput = $('taskInput');
+
+    function renderTodos() {
+      listEl.innerHTML = '';
+      todos.forEach(function (t, i) {
+        var li = document.createElement('li');
+        if (t.done) li.className = 'done';
+        var num = document.createElement('span'); num.className = 'num'; num.textContent = String(i + 1);
+        var span = document.createElement('span'); span.className = 'task'; span.textContent = t.text;
+        var del = document.createElement('button'); del.type = 'button';
+        del.textContent = '×'; del.setAttribute('aria-label', '删除任务 ' + (i + 1));
+        del.addEventListener('click', function () { todos.splice(i, 1); renderTodos(); });
+        li.appendChild(num); li.appendChild(span); li.appendChild(del);
+        listEl.appendChild(li);
+      });
+      emptyHint.style.display = todos.length ? 'none' : 'block';
+    }
+    function addTodo() {
+      var text = taskInput.value.trim();
+      if (!text) return;
+      todos.push({ text: text, done: false });
+      taskInput.value = '';
+      renderTodos();
+    }
+    $('addBtn').addEventListener('click', addTodo);
+    taskInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') addTodo(); });
+    taskInput.addEventListener('input', function () {
+      // 让 AI 的 input_text 有即时反馈
+      taskInput.style.borderColor = taskInput.value ? 'rgba(47,212,196,0.55)' : '';
+    });
+    renderTodos();
+
+    /* ---- 计数器 & 选择器 ---- */
+    var count = 0, clickCount = $('clickCount');
+    $('countBtn').addEventListener('click', function () {
+      count += 1; clickCount.textContent = String(count);
+    });
+    $('themeSelect').addEventListener('change', function (e) {
+      $('selectEcho').textContent = '当前：' + e.target.value;
+    });
+
+    /* ---- Omni 客户端集成 ---- */
+    // Hub 地址：同源时由页面自身 origin 推导（由 Hub 托管时），否则回落本地默认端口。
+    window.OMNI_WEB_MCP_CONFIG = {
+      hub: (window.location.protocol === 'file:' ? '' : window.location.origin) || 'http://127.0.0.1:8787',
+      autoConnect: true,   // 由 Hub 托管时同源自动发现 token；file:// 时回落后备地址
+      badge: true,
+      'badge-position': 'bottom-right'
+    };
+
+    var omni = null;
+    function omniApi() {
+      // mcp-client.js 在本脚本之后加载；每次调用时动态取，避免读到 undefined。
+      omni = omni || window.OmniWebMCP || window.omni || null;
+      return omni;
+    }
+
+    function fmtState(st) {
+      return '{ status: <span class="k-hl">' + esc(st.status) + '</span>' +
+        (st.clientId ? ', clientId: <span class="k-pink">' + esc(st.clientId.slice(0, 10)) + '…</span>' : '') +
+        (st.lastError ? ', error: <span class="k-err">' + esc(st.lastError) + '</span>' : '') + ' }';
+    }
+
+    function renderSnapshot(snap) {
+      // outline
+      var out = $('outlineView');
+      if (snap && snap.outline && snap.outline.length) {
+        out.innerHTML = snap.outline.slice(0, 24).map(function (n) {
+          return '<div><span class="tag">h' + esc(n.level || n.depth || '?') + '</span>' + esc(n.text || n.title || n.name || '(unnamed)') + '</div>';
+        }).join('');
+      } else {
+        out.innerHTML = '<span class="k-dim" style="font-family:var(--mono);font-size:12.5px">无大纲</span>';
+      }
+      // interactive elements
+      var ev = $('elemsView');
+      if (snap && snap.interactive && snap.interactive.length) {
+        ev.innerHTML = snap.interactive.slice(0, 40).map(function (el) {
+          return '<div class="el"><span class="id">[' + esc(el.id) + ']</span>' +
+            '<span class="role">' + esc(el.role || el.tag || 'el') + '</span>' +
+            '<span class="name">' + esc((el.name || el.text || el.label || el.value || '').toString().slice(0, 58)) + '</span>' +
+            '<span class="box">' + (el.box ? Math.round(el.box.x) + ',' + Math.round(el.box.y) : '') + '</span></div>';
+        }).join('');
+      } else {
+        ev.innerHTML = '<span class="k-dim" style="font-family:var(--mono);font-size:12.5px">无交互元素</span>';
+      }
+    }
+
+    function renderState(st) {
+      pill.setAttribute('data-status', st.status);
+      var texts = {
+        idle: '待命 · idle', connecting: '握手中 · connecting', connected: '已连接 · connected',
+        reconnecting: '重连中 · reconnecting', unauthorized: '未授权 · unauthorized',
+        error: '错误 · error', offline: '离线 · offline'
+      };
+      pillText.textContent = texts[st.status] || st.status;
+      footStat.textContent = st.status;
+      footClient.textContent = st.clientId ? 'clientId ' + st.clientId.slice(0, 12) + '…' : 'no clientId';
+      snapBtn.disabled = st.status !== 'connected';
+      connBtn.textContent = st.status === 'connected' ? '断开 Hub' : '连接 Hub';
+    }
+
+    document.addEventListener('omni-web-mcp:status', function (e) {
+      var st = (e && e.detail) || {};
+      renderState(st);
+      log('<span class="k-dim">status →</span> ' + fmtState(st));
+    });
+    document.addEventListener('omni-web-mcp:ready', function (e) {
+      log('<span class="k-ok">ready · Hub 配对成功</span>');
+    });
+    document.addEventListener('omni-web-mcp:action', function (e) {
+      var d = (e && e.detail) || {};
+      log('<span class="k-dim">action →</span> ' + esc(d.action) + ' ' + esc(JSON.stringify(d.params || {})));
+    });
+
+    connBtn.addEventListener('click', function () {
+      var api = omniApi();
+      if (!api) { log('<span class="k-err">omni-web-mcp.js 未加载（mcp-client.js 缺失）</span>'); return; }
+      var st = api.getState();
+      if (st.status === 'connected') { api.disconnect(); }
+      else {
+        log('<span class="k-dim">connect() → ' + esc(window.OMNI_WEB_MCP_CONFIG.hub) + '</span>');
+        api.connect().then(function () { return refresh(); }).catch(function (err) {
+          log('<span class="k-err">connect 失败：' + esc(err && err.message) + '</span>');
+        });
+      }
+    });
+
+    function refresh() {
+      var api = omniApi();
+      if (!api) return Promise.resolve();
+      return omniApi().getDomTree({ include_text: false }).then(function (snap) {
+        renderSnapshot(snap);
+        log('<span class="k-ok">get_dom_tree ✓</span> <span class="k-dim">interactive=' +
+          (snap.interactive ? snap.interactive.length : 0) + ' outline=' +
+          (snap.outline ? snap.outline.length : 0) + '</span>');
+      }).catch(function (err) {
+        log('<span class="k-err">get_dom_tree 失败：' + esc(err && err.message) + '</span>');
+      });
+    }
+    snapBtn.addEventListener('click', refresh);
+    clearBtn.addEventListener('click', function () { consoleView.innerHTML = '<span class="k-dim">// cleared</span>'; });
+
+    renderState({ status: 'idle' });
+  })();
+</script>
+
+<!-- 关键的一行：引入 Omni-Web-MCP 注入客户端 -->
+<script src="../mcp-client.js"></script>
+</body>
+</html>

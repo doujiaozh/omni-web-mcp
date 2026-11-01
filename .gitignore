@@ -1,0 +1,17 @@
+# Dependencies (none required — kept for future tooling)
+node_modules/
+package-lock.json
+pnpm-lock.yaml
+
+# Local pairing token / runtime artifacts
+.omni-web-mcp-token
+*.log
+logs/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+browser-screenshots/
