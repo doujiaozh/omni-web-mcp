@@ -2,6 +2,8 @@
 
 **Turn any web page into an AI playground — in one line.**
 
+<img src='demo.svg' alt='Demo' width='100%' />
+
 Zero-dependency, zero-build, single-file MCP bridge for Claude Desktop, Cursor, Windsurf, and any MCP-compatible agent.
 
 ⭐ **Star this repo** if you want AI to stop asking you to "copy-paste the page content".
